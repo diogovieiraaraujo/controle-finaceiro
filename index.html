@@ -11,6 +11,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
     
     <style>
+        /* CSS MANTIDO IGUAL AO ORIGINAL */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Inter', 'Segoe UI', sans-serif;
@@ -62,6 +63,8 @@
         .btn-csv:hover { background: rgba(5, 150, 105, 1); }
         .btn-paste { background: rgba(245, 158, 11, 0.9); border-color: rgba(245, 158, 11, 1); }
         .btn-paste:hover { background: rgba(217, 119, 6, 1); }
+        .btn-sync { background: rgba(59, 130, 246, 0.9); border-color: rgba(59, 130, 246, 1); }
+        .btn-sync:hover { background: rgba(37, 99, 235, 1); }
         
         .content { padding: 40px; }
         .tabs {
@@ -80,7 +83,6 @@
         .tab-content.active { display: block; animation: fadeIn 0.5s; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* Modal Styles */
         .modal-overlay {
             display: none;
             position: fixed;
@@ -230,6 +232,20 @@
         .empty-state { text-align: center; padding: 60px 20px; color: #94a3b8; }
         .empty-state h3 { font-size: 22px; margin-bottom: 12px; }
         
+        /* Loading Overlay */
+        #loadingOverlay {
+            position: fixed; top:0; left:0; width:100%; height:100%;
+            background: rgba(255,255,255,0.8); z-index: 2000;
+            display: none; justify-content: center; align-items: center;
+            flex-direction: column; backdrop-filter: blur(5px);
+        }
+        .loader {
+            border: 5px solid #f3f3f3; border-top: 5px solid #667eea;
+            border-radius: 50%; width: 50px; height: 50px;
+            animation: spin 1s linear infinite; margin-bottom: 15px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
         @media (max-width: 768px) {
             .transaction-item { grid-template-columns: 1fr; gap: 12px; }
             .tabs { flex-direction: column; }
@@ -239,15 +255,21 @@
     </style>
 </head>
 <body>
+    <div id="loadingOverlay">
+        <div class="loader"></div>
+        <p style="font-weight: bold; color: #475569;">Sincronizando com a Planilha...</p>
+    </div>
+
     <div class="container">
         <div class="header">
             <div class="header-left">
                 <h1>💰 Dashboard Financeiro</h1>
-                <p>Controle inteligente das suas finanças</p>
+                <p>Integrado com Google Sheets</p>
             </div>
             <div class="header-actions">
                 <input type="file" id="csvInput" accept=".csv" style="display: none">
                 
+                <button class="btn-header btn-sync" onclick="fetchFromGoogleSheets()">🔄 Sincronizar Agora</button>
                 <button class="btn-header btn-paste" onclick="openModal()">📋 Colar Dados</button>
                 <button class="btn-header btn-csv" onclick="document.getElementById('csvInput').click()">📂 Importar CSV</button>
                 <button class="btn-header" onclick="clearCache()">🗑️ Limpar</button>
@@ -310,7 +332,7 @@ SAMSUNG	BOLETO	DESPESA	167,34
                 </div>
 
                 <div class="input-section">
-                    <h2>➕ Adicionar Manualmente</h2>
+                    <h2>➕ Adicionar Manualmente (Local)</h2>
                     <div class="form-grid">
                         <div class="form-group">
                             <label>Data</label>
@@ -352,7 +374,7 @@ SAMSUNG	BOLETO	DESPESA	167,34
 
                 <div class="transactions-section">
                     <div class="section-header">
-                        <h2>📋 Transações do Mês</h2>
+                        <h2>📋 Transações</h2>
                         <div class="filter-buttons">
                             <button class="filter-btn active" onclick="filterTransactions('all')">Todas</button>
                             <button class="filter-btn" onclick="filterTransactions('income')">Receitas</button>
@@ -447,6 +469,9 @@ SAMSUNG	BOLETO	DESPESA	167,34
     </div>
 
     <script>
+        // --- CONFIGURAÇÃO DA API ---
+        const API_URL = "https://script.google.com/macros/s/AKfycbxyBkG-LvjLtuRpMepJfHjM_T3MpwLUybLlMawhZyWXxQ57IG-UgqZ-BpmHhqnXE6k/exec";
+
         let transactions = [];
         let currentFilter = 'all';
         const today = new Date().toISOString().split('T')[0];
@@ -462,14 +487,56 @@ SAMSUNG	BOLETO	DESPESA	167,34
             return `${day}/${month}/${year}`;
         }
 
-        // --- Inicialização e CSV ---
-        window.addEventListener('load', () => {
-            loadFromCache();
-            updateAllViews();
+        // --- Inicialização ---
+        window.addEventListener('load', async () => {
+            loadFromCache(); // Carrega o que já tem salvo no navegador
             
-            // Listener para o botão de Importar CSV
+            // Se tiver URL de API configurada, tenta buscar dados atualizados
+            if(API_URL && API_URL.includes("script.google.com")) {
+                await fetchFromGoogleSheets();
+            } else {
+                updateAllViews();
+            }
+
             document.getElementById('csvInput').addEventListener('change', handleCSVUpload);
         });
+
+        // --- INTEGRAÇÃO COM GOOGLE SHEETS ---
+        async function fetchFromGoogleSheets() {
+            const loading = document.getElementById('loadingOverlay');
+            loading.style.display = 'flex';
+
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) throw new Error('Erro na conexão com Planilha');
+                
+                const sheetData = await response.json();
+                
+                if (sheetData.error) {
+                    alert('Erro na Planilha: ' + sheetData.error);
+                    return;
+                }
+
+                if (sheetData && sheetData.length > 0) {
+                    // Mescla dados da planilha com dados manuais locais que não estão na planilha
+                    // Mas para simplificar, vamos assumir que a planilha é a "VERDADE"
+                    // E juntar com o que foi adicionado MANUALMENTE no navegador que ainda não está lá
+                    
+                    // Estratégia simples: Substitui tudo pelos dados da planilha
+                    // Se você quiser manter dados locais, teria que fazer uma lógica de merge mais complexa
+                    transactions = sheetData;
+                    
+                    saveToCache();
+                    updateAllViews();
+                    console.log('Dados atualizados da planilha com sucesso!');
+                }
+            } catch (error) {
+                console.error('Erro ao buscar dados:', error);
+                // Não mostra alert intrusivo no load, só se for clique manual
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
 
         // --- Lógica do Modal de Colar ---
         function openModal() {
@@ -513,42 +580,27 @@ SAMSUNG	BOLETO	DESPESA	167,34
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i].trim();
                 if (!line) continue;
+                if (line.toUpperCase().includes('DESCRIÇÃO') && line.toUpperCase().includes('VALOR')) continue;
 
-                // Detecta se é cabeçalho e pula
-                if (line.toUpperCase().includes('DESCRIÇÃO') && line.toUpperCase().includes('VALOR')) {
-                    continue;
-                }
-
-                // Tenta dividir por TAB (Excel/CopyPaste) ou Ponto e Vírgula (CSV) ou Vírgula
                 let columns = line.split('\t');
                 if (columns.length < 4) columns = line.split(';');
                 if (columns.length < 4) columns = line.split(',');
 
                 if (columns.length >= 4) {
-                    // Col A [0] = Descrição
-                    // Col B [1] = Categoria
-                    // Col C [2] = Tipo
-                    // Col D [3] = Valor
-                    
                     const desc = columns[0].trim().replace(/"/g, '');
                     const catRaw = columns[1].trim().replace(/"/g, '');
                     const typeRaw = columns[2].trim().toUpperCase().replace(/"/g, '');
                     let valRaw = columns[3].trim().replace(/"/g, '');
 
-                    // Tratamento do Tipo
                     let type = 'expense'; 
                     if (typeRaw.includes('RECEITA') || typeRaw.includes('ENTRADA')) {
                         type = 'income';
                     }
 
-                    // Tratamento do Valor
                     valRaw = valRaw.replace('R$', '').trim();
-                    // Se tem vírgula e não tem ponto (ex: 1200,50) -> troca , por .
                     if (valRaw.includes(',') && !valRaw.includes('.')) {
                         valRaw = valRaw.replace(',', '.');
-                    } 
-                    // Se tem ponto (milhar) e vírgula (decimal) (ex: 1.200,50)
-                    else if (valRaw.includes('.') && valRaw.includes(',')) {
+                    } else if (valRaw.includes('.') && valRaw.includes(',')) {
                         valRaw = valRaw.replace(/\./g, '').replace(',', '.');
                     }
                     
@@ -561,7 +613,7 @@ SAMSUNG	BOLETO	DESPESA	167,34
                             cat: catRaw,
                             type: type,
                             val: val,
-                            id: Date.now() + i + Math.random() // ID único
+                            id: Date.now() + i + Math.random()
                         });
                         addedCount++;
                     }
@@ -571,9 +623,9 @@ SAMSUNG	BOLETO	DESPESA	167,34
             if (addedCount > 0) {
                 saveToCache();
                 updateAllViews();
-                alert(`✅ ${addedCount} transações importadas com sucesso!`);
+                alert(`✅ ${addedCount} transações locais adicionadas!`);
             } else {
-                alert('⚠️ Nenhuma transação válida encontrada. Verifique o formato.');
+                alert('⚠️ Nenhuma transação válida encontrada.');
             }
         }
 
@@ -591,7 +643,7 @@ SAMSUNG	BOLETO	DESPESA	167,34
         }
 
         function clearCache() {
-            if (confirm('Tem certeza que deseja limpar todos os dados?')) {
+            if (confirm('Tem certeza que deseja limpar todos os dados LOCAIS?')) {
                 transactions = [];
                 saveToCache();
                 updateAllViews();
@@ -633,12 +685,12 @@ SAMSUNG	BOLETO	DESPESA	167,34
             
             const btn = document.querySelector('.input-section .btn-primary');
             const originalText = btn.textContent;
-            btn.textContent = '✅ Adicionado!';
+            btn.textContent = '✅ Adicionado Localmente!';
             setTimeout(() => { btn.textContent = originalText; }, 1500);
         }
 
         function deleteTransaction(id) {
-            if (confirm('Excluir transação?')) {
+            if (confirm('Excluir transação da visualização? (Se estiver na planilha, ela voltará ao recarregar)')) {
                 transactions = transactions.filter(t => t.id !== id);
                 saveToCache();
                 updateAllViews();
@@ -753,7 +805,7 @@ SAMSUNG	BOLETO	DESPESA	167,34
             }
 
             if (filteredTrans.length === 0) {
-                list.innerHTML = '<div class="empty-state"><h3>📭 Nenhuma transação encontrada</h3><p>Adicione, importe CSV ou Cole dados</p></div>';
+                list.innerHTML = '<div class="empty-state"><h3>📭 Nenhuma transação encontrada</h3><p>Adicione manual, importe CSV ou conecte com a Planilha</p></div>';
             } else {
                 filteredTrans.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(t => {
                     const item = document.createElement('div');
