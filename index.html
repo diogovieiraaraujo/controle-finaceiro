@@ -11,7 +11,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
     
     <style>
-        /* CSS MANTIDO IGUAL AO ORIGINAL */
+        /* ESTILOS MANTIDOS */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Inter', 'Segoe UI', sans-serif;
@@ -179,6 +179,8 @@
             color: white; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         }
         .btn-primary:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5); }
+        .btn-primary:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
+        
         .transactions-section { margin-bottom: 40px; }
         .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .section-header h2 { font-size: 24px; font-weight: 800; color: #1e293b; }
@@ -269,11 +271,11 @@
             <div class="header-actions">
                 <input type="file" id="csvInput" accept=".csv" style="display: none">
                 
-                <button class="btn-header btn-sync" onclick="fetchFromGoogleSheets()">🔄 Sincronizar Agora</button>
+                <button class="btn-header btn-sync" onclick="fetchFromGoogleSheets(true)">🔄 Atualizar</button>
                 <button class="btn-header btn-paste" onclick="openModal()">📋 Colar Dados</button>
                 <button class="btn-header btn-csv" onclick="document.getElementById('csvInput').click()">📂 Importar CSV</button>
-                <button class="btn-header" onclick="clearCache()">🗑️ Limpar</button>
-                <button class="btn-header btn-pdf" onclick="exportToPDF()">📄 Relatório PDF</button>
+                <button class="btn-header" onclick="clearCache()">🗑️ Limpar Local</button>
+                <button class="btn-header btn-pdf" onclick="exportToPDF()">📄 PDF</button>
             </div>
         </div>
 
@@ -332,7 +334,7 @@ SAMSUNG	BOLETO	DESPESA	167,34
                 </div>
 
                 <div class="input-section">
-                    <h2>➕ Adicionar Manualmente (Local)</h2>
+                    <h2>➕ Adicionar (Salva na Planilha)</h2>
                     <div class="form-grid">
                         <div class="form-group">
                             <label>Data</label>
@@ -421,9 +423,8 @@ SAMSUNG	BOLETO	DESPESA	167,34
                         </div>
                     </div>
                 </div>
-
                 <div class="chart-container">
-                    <h2>📈 Evolução Mensal (Receitas vs Despesas)</h2>
+                    <h2>📈 Evolução Mensal</h2>
                     <div id="monthlyChart"></div>
                 </div>
             </div>
@@ -459,7 +460,6 @@ SAMSUNG	BOLETO	DESPESA	167,34
                         </div>
                     </div>
                 </div>
-
                 <div class="chart-container">
                     <h2>🎯 Análise Detalhada</h2>
                     <div id="statsDetails"></div>
@@ -469,8 +469,13 @@ SAMSUNG	BOLETO	DESPESA	167,34
     </div>
 
     <script>
-        // --- CONFIGURAÇÃO DA API ---
-        const API_URL = "https://script.google.com/macros/s/AKfycbxyBkG-LvjLtuRpMepJfHjM_T3MpwLUybLlMawhZyWXxQ57IG-UgqZ-BpmHhqnXE6k/exec";
+        // ==========================================
+        // CONFIGURAÇÃO DA API
+        // ==========================================
+        // 👇👇👇 COLE SUA URL ABAIXO ENTRE AS ASPAS 👇👇👇
+        const API_URL = "https://script.google.com/macros/s/AKfycbwqFsvxu5sSbNTljpsdtiw5pUxqaqwyw6DUf2I1G3L_l4wH57bYTXI3TU6RLAgPQNEo/exec"; 
+        
+        // ==========================================
 
         let transactions = [];
         let currentFilter = 'all';
@@ -489,22 +494,23 @@ SAMSUNG	BOLETO	DESPESA	167,34
 
         // --- Inicialização ---
         window.addEventListener('load', async () => {
-            loadFromCache(); // Carrega o que já tem salvo no navegador
+            loadFromCache(); // Carrega o que já tem salvo localmente para ser rápido
             
-            // Se tiver URL de API configurada, tenta buscar dados atualizados
+            // Se tiver URL de API configurada, busca dados da nuvem
             if(API_URL && API_URL.includes("script.google.com")) {
-                await fetchFromGoogleSheets();
+                await fetchFromGoogleSheets(false);
             } else {
                 updateAllViews();
+                console.log("Modo offline: configure a API_URL para sincronizar.");
             }
 
             document.getElementById('csvInput').addEventListener('change', handleCSVUpload);
         });
 
-        // --- INTEGRAÇÃO COM GOOGLE SHEETS ---
-        async function fetchFromGoogleSheets() {
+        // --- INTEGRAÇÃO: LEITURA (GET) ---
+        async function fetchFromGoogleSheets(showLoading = false) {
             const loading = document.getElementById('loadingOverlay');
-            loading.style.display = 'flex';
+            if(showLoading) loading.style.display = 'flex';
 
             try {
                 const response = await fetch(API_URL);
@@ -517,28 +523,83 @@ SAMSUNG	BOLETO	DESPESA	167,34
                     return;
                 }
 
-                if (sheetData && sheetData.length > 0) {
-                    // Mescla dados da planilha com dados manuais locais que não estão na planilha
-                    // Mas para simplificar, vamos assumir que a planilha é a "VERDADE"
-                    // E juntar com o que foi adicionado MANUALMENTE no navegador que ainda não está lá
-                    
-                    // Estratégia simples: Substitui tudo pelos dados da planilha
-                    // Se você quiser manter dados locais, teria que fazer uma lógica de merge mais complexa
+                if (Array.isArray(sheetData)) {
+                    // Substitui os dados locais pelos da planilha (Fonte da Verdade)
                     transactions = sheetData;
                     
                     saveToCache();
                     updateAllViews();
-                    console.log('Dados atualizados da planilha com sucesso!');
+                    console.log('Sincronizado com Google Sheets!');
                 }
             } catch (error) {
                 console.error('Erro ao buscar dados:', error);
-                // Não mostra alert intrusivo no load, só se for clique manual
+                if(showLoading) alert('Erro ao conectar com a planilha. Verifique a internet.');
             } finally {
-                loading.style.display = 'none';
+                if(showLoading) loading.style.display = 'none';
             }
         }
 
-        // --- Lógica do Modal de Colar ---
+        // --- INTEGRAÇÃO: ESCRITA (POST) ---
+        function addTransaction() {
+            const date = document.getElementById('date').value;
+            const desc = document.getElementById('description').value;
+            const cat = document.getElementById('category').value;
+            const type = document.getElementById('type').value;
+            const val = parseFloat(document.getElementById('value').value);
+
+            if (!date || !desc || !val) { alert('⚠️ Preencha todos os campos!'); return; }
+
+            // Botão em estado de carregamento
+            const btn = document.querySelector('.input-section .btn-primary');
+            const originalText = btn.textContent;
+            btn.textContent = '⏳ Salvando...';
+            btn.disabled = true;
+
+            const newTransaction = { date, desc, cat, type, val };
+
+            // Se não tiver API configurada, salva só local
+            if(!API_URL || !API_URL.includes("script.google.com")) {
+                finishAddLocal(newTransaction, btn, originalText, '✅ Adicionado (Offline)');
+                return;
+            }
+
+            // Envia para o Google Sheets (POST)
+            // 'no-cors' é necessário para Apps Script web app
+            fetch(API_URL, {
+                method: 'POST',
+                mode: 'no-cors', 
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newTransaction)
+            })
+            .then(() => {
+                // Sucesso (assumido, pois no-cors não retorna detalhes)
+                finishAddLocal(newTransaction, btn, originalText, '✅ Salvo na Nuvem!');
+            })
+            .catch(err => {
+                console.error(err);
+                alert('Erro na conexão. Salvo localmente.');
+                finishAddLocal(newTransaction, btn, originalText, '⚠️ Salvo Localmente');
+            });
+        }
+
+        function finishAddLocal(transaction, btn, originalText, successText) {
+             // Adiciona localmente para feedback imediato
+            transactions.push({ ...transaction, id: Date.now() });
+            
+            document.getElementById('description').value = '';
+            document.getElementById('value').value = '';
+            
+            saveToCache();
+            updateAllViews();
+            
+            btn.textContent = successText;
+            setTimeout(() => { 
+                btn.textContent = originalText; 
+                btn.disabled = false; 
+            }, 2000);
+        }
+
+        // --- Lógica do Modal de Colar (Mantida) ---
         function openModal() {
             document.getElementById('pasteModal').classList.add('active');
             document.getElementById('pasteArea').focus();
@@ -551,10 +612,7 @@ SAMSUNG	BOLETO	DESPESA	167,34
 
         function processPaste() {
             const rawText = document.getElementById('pasteArea').value;
-            if (!rawText.trim()) {
-                alert('Cole os dados primeiro!');
-                return;
-            }
+            if (!rawText.trim()) { alert('Cole os dados primeiro!'); return; }
             processBulkData(rawText);
             closeModal();
         }
@@ -563,11 +621,8 @@ SAMSUNG	BOLETO	DESPESA	167,34
         function handleCSVUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
-
             const reader = new FileReader();
-            reader.onload = function(e) {
-                processBulkData(e.target.result);
-            };
+            reader.onload = function(e) { processBulkData(e.target.result); };
             reader.readAsText(file);
             event.target.value = '';
         }
@@ -608,25 +663,17 @@ SAMSUNG	BOLETO	DESPESA	167,34
 
                     if (!isNaN(val)) {
                         transactions.push({
-                            date: todayDate,
-                            desc: desc,
-                            cat: catRaw,
-                            type: type,
-                            val: val,
+                            date: todayDate, desc: desc, cat: catRaw, type: type, val: val,
                             id: Date.now() + i + Math.random()
                         });
                         addedCount++;
                     }
                 }
             }
-
             if (addedCount > 0) {
-                saveToCache();
-                updateAllViews();
-                alert(`✅ ${addedCount} transações locais adicionadas!`);
-            } else {
-                alert('⚠️ Nenhuma transação válida encontrada.');
-            }
+                saveToCache(); updateAllViews();
+                alert(`✅ ${addedCount} transações adicionadas APENAS LOCALMENTE.`);
+            } else { alert('⚠️ Nenhuma transação válida encontrada.'); }
         }
 
         // --- Cache e Dados ---
@@ -643,7 +690,7 @@ SAMSUNG	BOLETO	DESPESA	167,34
         }
 
         function clearCache() {
-            if (confirm('Tem certeza que deseja limpar todos os dados LOCAIS?')) {
+            if (confirm('Tem certeza? Isso limpa os dados do navegador (não apaga da planilha).')) {
                 transactions = [];
                 saveToCache();
                 updateAllViews();
@@ -666,31 +713,9 @@ SAMSUNG	BOLETO	DESPESA	167,34
             if (tabId === 'statistics') updateStatistics();
         }
 
-        function addTransaction() {
-            const date = document.getElementById('date').value;
-            const desc = document.getElementById('description').value;
-            const cat = document.getElementById('category').value;
-            const type = document.getElementById('type').value;
-            const val = parseFloat(document.getElementById('value').value);
-
-            if (!date || !desc || !val) { alert('⚠️ Preencha todos os campos!'); return; }
-
-            transactions.push({ date, desc, cat, type, val, id: Date.now() });
-            
-            document.getElementById('description').value = '';
-            document.getElementById('value').value = '';
-            
-            saveToCache();
-            updateAllViews();
-            
-            const btn = document.querySelector('.input-section .btn-primary');
-            const originalText = btn.textContent;
-            btn.textContent = '✅ Adicionado Localmente!';
-            setTimeout(() => { btn.textContent = originalText; }, 1500);
-        }
-
+        // --- Excluir (Local apenas) ---
         function deleteTransaction(id) {
-            if (confirm('Excluir transação da visualização? (Se estiver na planilha, ela voltará ao recarregar)')) {
+            if (confirm('Excluir transação da visualização? (Para excluir definitivo, vá na Planilha Google)')) {
                 transactions = transactions.filter(t => t.id !== id);
                 saveToCache();
                 updateAllViews();
@@ -717,9 +742,7 @@ SAMSUNG	BOLETO	DESPESA	167,34
             const rows = transactions
                 .sort((a, b) => new Date(b.date) - new Date(a.date))
                 .map(t => [
-                    formatDate(t.date),
-                    t.desc,
-                    t.cat,
+                    formatDate(t.date), t.desc, t.cat,
                     t.type === 'income' ? 'Receita' : 'Despesa',
                     formatMoney(t.val)
                 ]);
@@ -727,8 +750,7 @@ SAMSUNG	BOLETO	DESPESA	167,34
             doc.autoTable({
                 head: [['Data', 'Descrição', 'Categoria', 'Tipo', 'Valor']],
                 body: rows,
-                startY: 40,
-                theme: 'grid',
+                startY: 40, theme: 'grid',
                 headStyles: { fillColor: [102, 126, 234] },
                 styles: { fontSize: 10, cellPadding: 3 },
                 columnStyles: { 4: { halign: 'right' } },
@@ -749,10 +771,10 @@ SAMSUNG	BOLETO	DESPESA	167,34
             doc.text(`Total Despesas: ${formatMoney(totalExpense)}`, 14, finalY + 7);
             doc.text(`Saldo Final: ${formatMoney(totalIncome - totalExpense)}`, 14, finalY + 14);
 
-            doc.save('relatorio-financeiro-detalhado.pdf');
+            doc.save('relatorio-financeiro.pdf');
         }
 
-        // --- Views e Atualizações ---
+        // --- Views ---
         function updateAllViews() {
             updateMonthlyView();
             if(document.getElementById('annual').classList.contains('active')) updateAnnualView();
@@ -805,7 +827,7 @@ SAMSUNG	BOLETO	DESPESA	167,34
             }
 
             if (filteredTrans.length === 0) {
-                list.innerHTML = '<div class="empty-state"><h3>📭 Nenhuma transação encontrada</h3><p>Adicione manual, importe CSV ou conecte com a Planilha</p></div>';
+                list.innerHTML = '<div class="empty-state"><h3>📭 Nenhuma transação no mês</h3></div>';
             } else {
                 filteredTrans.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(t => {
                     const item = document.createElement('div');
@@ -834,8 +856,7 @@ SAMSUNG	BOLETO	DESPESA	167,34
             const total = Object.values(categories).reduce((a, b) => a + b, 0);
 
             if (total === 0) {
-                container.innerHTML = '<div class="empty-state"><p>Sem despesas para exibir gráficos</p></div>';
-                return;
+                container.innerHTML = '<div class="empty-state"><p>Sem dados</p></div>'; return;
             }
 
             Object.entries(categories)
@@ -845,13 +866,8 @@ SAMSUNG	BOLETO	DESPESA	167,34
                     const bar = document.createElement('div');
                     bar.className = 'chart-bar';
                     bar.innerHTML = `
-                        <div class="chart-label">
-                            <span>${cat}</span>
-                            <span>${formatMoney(val)} (${percentage}%)</span>
-                        </div>
-                        <div class="chart-progress">
-                            <div class="chart-fill" style="width: ${percentage}%">${percentage}%</div>
-                        </div>
+                        <div class="chart-label"><span>${cat}</span><span>${formatMoney(val)} (${percentage}%)</span></div>
+                        <div class="chart-progress"><div class="chart-fill" style="width: ${percentage}%">${percentage}%</div></div>
                     `;
                     container.appendChild(bar);
                 });
@@ -865,13 +881,8 @@ SAMSUNG	BOLETO	DESPESA	167,34
 
             yearTrans.forEach(t => {
                 const month = parseInt(t.date.split('-')[1]) - 1;
-                if (t.type === 'income') {
-                    income += t.val;
-                    monthlyData[month].income += t.val;
-                } else {
-                    expense += t.val;
-                    monthlyData[month].expense += t.val;
-                }
+                if (t.type === 'income') { income += t.val; monthlyData[month].income += t.val; } 
+                else { expense += t.val; monthlyData[month].expense += t.val; }
             });
 
             document.getElementById('annualIncome').textContent = formatMoney(income);
@@ -887,16 +898,15 @@ SAMSUNG	BOLETO	DESPESA	167,34
             monthlyData.forEach((data, index) => {
                 const incPct = (data.income / maxVal) * 100;
                 const expPct = (data.expense / maxVal) * 100;
-                
                 const item = document.createElement('div');
                 item.style.marginBottom = '15px';
                 item.innerHTML = `
                     <div style="font-weight:bold; margin-bottom:5px">${months[index]}</div>
                     <div style="display:flex; gap:5px; height:8px; background:#eee; border-radius:4px; overflow:hidden">
-                        <div style="width:${incPct}%; background:#10b981;" title="Receita: ${formatMoney(data.income)}"></div>
+                        <div style="width:${incPct}%; background:#10b981;"></div>
                     </div>
                     <div style="margin-top:2px; display:flex; gap:5px; height:8px; background:#eee; border-radius:4px; overflow:hidden">
-                        <div style="width:${expPct}%; background:#ef4444;" title="Despesa: ${formatMoney(data.expense)}"></div>
+                        <div style="width:${expPct}%; background:#ef4444;"></div>
                     </div>
                 `;
                 chart.appendChild(item);
@@ -904,10 +914,7 @@ SAMSUNG	BOLETO	DESPESA	167,34
         }
 
         function updateStatistics() {
-            if (transactions.length === 0) {
-                document.getElementById('statsDetails').innerHTML = '<div class="empty-state"><p>Sem dados suficientes</p></div>';
-                return;
-            }
+            if (transactions.length === 0) return;
             const expenses = transactions.filter(t => t.type === 'expense');
             const incomes = transactions.filter(t => t.type === 'income');
             const maxExp = expenses.length ? Math.max(...expenses.map(t => t.val)) : 0;
@@ -920,22 +927,6 @@ SAMSUNG	BOLETO	DESPESA	167,34
             document.getElementById('maxExpense').textContent = formatMoney(maxExp);
             document.getElementById('maxIncome').textContent = formatMoney(maxInc);
             document.getElementById('topCategory').textContent = topCat ? topCat[0] : '-';
-
-            const container = document.getElementById('statsDetails');
-            container.innerHTML = `
-                <div class="transaction-item">
-                    <div>Média de Gasto por Transação</div>
-                    <div style="font-weight:bold; text-align:right">
-                        ${expenses.length ? formatMoney(expenses.reduce((a,b)=>a+b.val,0)/expenses.length) : 'R$ 0,00'}
-                    </div>
-                </div>
-                <div class="transaction-item">
-                    <div>Média de Receita por Transação</div>
-                    <div style="font-weight:bold; text-align:right">
-                        ${incomes.length ? formatMoney(incomes.reduce((a,b)=>a+b.val,0)/incomes.length) : 'R$ 0,00'}
-                    </div>
-                </div>
-            `;
         }
     </script>
 </body>
